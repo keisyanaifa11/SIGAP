@@ -15,9 +15,9 @@ class ProposalController extends Controller
     {
         $user = $request->user();
         if ($user->role === 'user') {
-            $proposals = Proposal::with(['user', 'comments.user'])->where('user_id', $user->id)->get();
+            $proposals = Proposal::with(['user', 'comments.user'])->where('user_id', $user->id)->orderBy('created_at', 'desc')->get();
         } else {
-            $proposals = Proposal::with(['user', 'comments.user'])->get();
+            $proposals = Proposal::with(['user', 'comments.user'])->orderBy('created_at', 'desc')->get();
         }
 
         return response()->json([

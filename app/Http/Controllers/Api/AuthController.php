@@ -10,17 +10,44 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
-        $role = $request->role; 
-        
-        $dbRole = 'user';
-        if ($role === 'master') $dbRole = 'superadmin';
-        if ($role === 'reviewer') $dbRole = 'admin';
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required'
+        ]);
 
-        $user = User::where('role', $dbRole)->first();
+        $user = User::where('email', $request->email)->first();
 
-        if (!$user) {
-            return response()->json(['message' => 'User not found'], 404);
+        if (!$user || !\Illuminate\Support\Facades\Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Email atau Password salah'], 401);
         }
+
+        $token = $user->createToken('auth-token')->plainTextToken;
+
+        return response()->json([
+            'user' => $user,
+            'token' => $token
+        ]);
+    }
+
+    public function register(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|min:6',
+            'role' => 'required|in:user,admin,superadmin',
+            'instansi' => 'nullable|string',
+            'nomor_telepon' => 'nullable|string'
+        ]);
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => \Illuminate\Support\Facades\Hash::make($request->password),
+            'role' => $request->role,
+            'instansi' => $request->instansi,
+            'nomor_telepon' => $request->nomor_telepon,
+        ]);
 
         $token = $user->createToken('auth-token')->plainTextToken;
 

@@ -513,10 +513,10 @@ export default function UserPortal({ user, proposals, showToast, fetchProposals,
                   className="up-submit-evidence-btn"
                   onClick={() => handleUploadEvidence(p.id)}
                 >
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> Upload Dokumen LPJ / Evidence</span>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> Upload Laporan Kegiatan (LPJ, Dokumentasi Acara)</span>
                 </button>
                 <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '12px', color: 'var(--t3)' }}>
-                  Laporan Absen • Foto Kegiatan • LPJ PDF
+                  Laporan Berkas • Foto Kegiatan • LPJ PDF / ZIP
                 </div>
               </div>
             )}

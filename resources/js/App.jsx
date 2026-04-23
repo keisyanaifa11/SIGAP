@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import * as XLSX from 'xlsx';
 import './index.css';
 import webIcon from './assets/icon-web.svg';
 import bannerLogo from './assets/banner.svg';
@@ -71,6 +72,8 @@ export default function App() {
   const [portalTab, setPortalTab] = useState('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [authForm, setAuthForm] = useState({ email: '', password: '', name: '', role: 'user', instansi: '', nomor_telepon: '' });
 
   const [proposals, setProposals] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -197,54 +200,59 @@ export default function App() {
     setTimeout(() => setToastMsg(''), 3000);
   };
 
-  const handleExportCSV = (data, filename) => {
+  const handleExportExcel = (data, filename) => {
     if (data.length === 0) {
       showToast('Tidak ada data untuk diekspor');
       return;
     }
 
-    const headers = ['Kode Tiket', 'Pemohon', 'Instansi', 'Kegiatan', 'Tanggal Pelaksanaan', 'Dana Diajukan (Rp)', 'Status'];
-    const csvContent = [
-      headers.join(','),
-      ...data.map(p => {
-        const row = [
-          p.kode_tiket,
-          p.user?.name || '',
-          p.instansi || p.user?.instansi || '',
-          p.kegiatan,
-          p.tgl_pelaksanaan,
-          p.dana_diajukan,
-          p.status
-        ];
-        return row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',');
-      })
-    ].join('\n');
+    const exportData = data.map(p => ({
+      'Kode Tiket': p.kode_tiket,
+      'Pemohon': p.user?.name || '',
+      'Instansi': p.instansi || p.user?.instansi || '',
+      'Kegiatan': p.kegiatan,
+      'Tanggal Pelaksanaan': p.tgl_pelaksanaan,
+      'Dana Diajukan (Rp)': p.dana_diajukan,
+      'Status': p.status
+    }));
 
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('Data berhasil diekspor ke CSV!');
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    
+    // Auto-fit columns
+    const maxWidths = Object.keys(exportData[0] || {}).map(key => ({
+      wch: Math.max(
+        key.length,
+        ...exportData.map(row => String(row[key] || '').length)
+      ) + 4
+    }));
+    worksheet['!cols'] = maxWidths;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Master Data");
+    
+    XLSX.writeFile(workbook, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    showToast('Data berhasil diekspor ke Excel!');
   };
 
-  const handleLogin = async (role) => {
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
     try {
       setLoading(true);
-      const res = await axios.post('/api/login', { role });
+      const url = authMode === 'login' ? '/api/login' : '/api/register';
+      const res = await axios.post(url, authForm);
       const { user: dbUser, token } = res.data;
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setUser(dbUser);
-      setActiveRole(role);
+      const uiRole = dbUser.role === 'superadmin' ? 'master' : (dbUser.role === 'admin' ? 'reviewer' : 'user');
+      setActiveRole(uiRole);
       fetchProposals();
 
-      if (role === 'user') setActivePage('portal');
+      if (uiRole === 'user') setActivePage('portal');
       else setActivePage('dashboard');
-    } catch (e) {
-      showToast('Login failed');
+
+      showToast(authMode === 'login' ? 'Login berhasil' : 'Registrasi berhasil');
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Gagal masuk. Periksa kembali email dan password Anda.');
     } finally {
       setLoading(false);
     }
@@ -255,6 +263,7 @@ export default function App() {
     setActiveRole(null);
     setUser(null);
     setActivePage('dashboard');
+    setAuthMode('login');
   };
 
   const openProfileModal = () => {
@@ -375,19 +384,56 @@ export default function App() {
 
   if (!activeRole) {
     return (
-      <div className="overlay open" style={{ background: '#ffffff', zIndex: 9999, flexDirection: 'column' }}>
-        <div style={{ background: 'var(--surface)', padding: '54px 48px', borderRadius: '24px', width: '450px', maxWidth: '95%', textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.1)', border: '1px solid var(--line)' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '32px' }}>
-            <img src={webIcon} alt="Logo" style={{ width: '180px', height: 'auto' }} />
+      <div className="overlay open" style={{ background: '#f8fafc', zIndex: 9999, flexDirection: 'column' }}>
+        <div className="no-scrollbar" style={{ background: 'var(--surface)', padding: '40px 48px', borderRadius: '24px', width: '450px', maxWidth: '95%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.1)', border: '1px solid var(--line)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+            <img src={webIcon} alt="Logo" style={{ width: '150px', height: 'auto' }} />
           </div>
-          <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text)', marginBottom: '8px', letterSpacing: '-1px' }}>SIGAP Login</div>
-          <div style={{ fontSize: '14px', color: 'var(--t2)', marginBottom: '32px', lineHeight: '1.6' }}>Pilih peran untuk mensimulasikan sesi dan mengakses dashboard monitoring.</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <button className="btn btn-p" style={{ padding: '14px', background: '#346739', borderColor: '#346739', height: '52px', fontSize: '15px' }} disabled={loading} onClick={() => handleLogin('master')}>Super Admin</button>
-            <button className="btn btn-p" style={{ padding: '14px', background: '#3a7541', borderColor: '#3a7541', height: '52px', fontSize: '15px' }} disabled={loading} onClick={() => handleLogin('reviewer')}>Admin Administrator</button>
-            <button className="btn btn-d" style={{ padding: '14px', height: '52px', fontSize: '15px', color: '#346739', borderColor: '#e2e8f0', fontWeight: 700 }} disabled={loading} onClick={() => handleLogin('user')}>User / Pemohon</button>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text)', marginBottom: '8px', textAlign: 'center' }}>
+            {authMode === 'login' ? 'Login ke SIGAP' : 'Daftar Akun Baru'}
           </div>
-          <div style={{ marginTop: '32px', fontSize: '11px', color: 'var(--t3)', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: 600 }}>Sistem Informasi Gerak Alur Proposal</div>
+          <div style={{ fontSize: '14px', color: 'var(--t2)', marginBottom: '24px', textAlign: 'center' }}>
+            {authMode === 'login' ? 'Masukkan email dan sandi Anda' : 'Lengkapi profil di bawah ini untuk mendaftar'}
+          </div>
+          
+          <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'left' }}>
+            {authMode === 'register' && (
+              <>
+                <div>
+                  <label className="lbl" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>Nama Lengkap</label>
+                  <input type="text" required className="inp" style={{ width: '100%', padding: '10px' }} value={authForm.name} onChange={e => setAuthForm(prev => ({...prev, name: e.target.value}))} />
+                </div>
+                <div>
+                  <label className="lbl" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>Instansi / Perusahaan</label>
+                  <input type="text" className="inp" style={{ width: '100%', padding: '10px' }} value={authForm.instansi} onChange={e => setAuthForm(prev => ({...prev, instansi: e.target.value}))} />
+                </div>
+                <div>
+                  <label className="lbl" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>Nomor Telepon (WA)</label>
+                  <input type="text" className="inp" style={{ width: '100%', padding: '10px' }} value={authForm.nomor_telepon} onChange={e => setAuthForm(prev => ({...prev, nomor_telepon: e.target.value}))} />
+                </div>
+              </>
+            )}
+            
+            <div>
+              <label className="lbl" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>Email</label>
+              <input type="email" required className="inp" style={{ width: '100%', padding: '10px' }} value={authForm.email} onChange={e => setAuthForm(prev => ({...prev, email: e.target.value}))} />
+            </div>
+            <div>
+              <label className="lbl" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>Password</label>
+              <input type="password" required minLength="6" className="inp" style={{ width: '100%', padding: '10px' }} value={authForm.password} onChange={e => setAuthForm(prev => ({...prev, password: e.target.value}))} />
+            </div>
+
+            <button type="submit" className="btn btn-p" style={{ padding: '14px', background: '#346739', borderColor: '#346739', width: '100%', marginTop: '8px' }} disabled={loading}>
+              {authMode === 'login' ? 'Masuk Sekarang' : 'Daftar Sekarang'}
+            </button>
+          </form>
+
+          <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '14px', color: 'var(--t2)' }}>
+            {authMode === 'login' ? 'Belum punya akun? ' : 'Sudah punya akun? '}
+            <span style={{ color: '#346739', fontWeight: 600, cursor: 'pointer' }} onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}>
+              {authMode === 'login' ? 'Daftar di sini' : 'Login ke akun Anda'}
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -621,8 +667,11 @@ export default function App() {
                   {proposals.slice(0, 5).map(p => (
                     <tr key={p.id}>
                       <td className="cid">{p.kode_tiket}</td>
-                      <td><div className="cn">{p.user?.name || 'N/A'}</div><div className="cs">{p.instansi || p.user?.instansi || '-'}</div></td>
-                      <td>{p.kegiatan}</td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '13.5px' }}>{p.user?.name || 'N/A'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--t3)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{p.instansi || p.user?.instansi || '-'}</div>
+                      </td>
+                      <td style={{ fontWeight: 500 }}>{p.kegiatan}</td>
                       <td style={{ fontSize: '12.5px', color: 'var(--t3)', fontWeight: 500 }}>{p.tgl_pelaksanaan}</td>
                       <td style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 600 }}>Rp {formatRupiah(p.dana_diajukan)}</td>
                       <td><span className={`status ${getStatusClass(p.status)}`}>{p.status}</span></td>
@@ -657,8 +706,11 @@ export default function App() {
                   {filteredProposals.map(p => (
                     <tr key={p.id} className="hi">
                       <td className="cid">{p.kode_tiket}</td>
-                      <td><div className="cn">{p.user?.name || 'N/A'}</div><div className="cs" style={{ fontSize: '11px', color: 'var(--t3)', marginTop: '2px' }}>{p.instansi || p.user?.instansi || '-'}</div></td>
-                      <td>{p.kegiatan}</td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '13.5px' }}>{p.user?.name || 'N/A'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--t3)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{p.instansi || p.user?.instansi || '-'}</div>
+                      </td>
+                      <td style={{ fontWeight: 500 }}>{p.kegiatan}</td>
                       <td style={{ fontSize: '12.5px', color: 'var(--t3)', fontWeight: 500 }}>{p.tgl_pelaksanaan}</td>
                       <td><span className={`status ${getStatusClass(p.status)}`}>{p.status}</span></td>
                       <td className="ract">
@@ -683,7 +735,12 @@ export default function App() {
                 <tbody>
                   {proposals.filter(p => p.status === 'Menunggu Verif').map(p => (
                     <tr key={p.id}>
-                      <td className="cid">{p.kode_tiket}</td><td><div style={{ fontWeight: 500 }}>{p.user?.name || 'N/A'}</div><div style={{ fontSize: '11px', color: 'var(--t3)', marginTop: '2px' }}>{p.instansi || p.user?.instansi || '-'}</div></td><td>{p.kegiatan}</td>
+                      <td className="cid">{p.kode_tiket}</td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '13.5px' }}>{p.user?.name || 'N/A'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--t3)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{p.instansi || p.user?.instansi || '-'}</div>
+                      </td>
+                      <td style={{ fontWeight: 500 }}>{p.kegiatan}</td>
                       <td>{p.evidence_dokumen ? <span className="fl" onClick={() => showToast('Lihat ' + p.evidence_dokumen)}>{p.evidence_dokumen}</span> : 'Belum upload'}</td>
                       <td><span className={`status ${getStatusClass(p.status)}`}>{p.status}</span></td>
                       <td className="ract">
@@ -716,8 +773,8 @@ export default function App() {
             <div className="tc">
               <div className="tc-top">
                 <div className="tc-h">Master Database</div>
-                <button className="btn btn-success btn-sm" onClick={() => handleExportCSV(filteredProposals, 'master_database')}>
-                  <span style={{ display: 'flex', alignItems: 'center' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span> &nbsp;Ekspor CSV
+                <button className="btn btn-success btn-sm" onClick={() => handleExportExcel(filteredProposals, 'Master_Data_SIGAP')}>
+                  <span style={{ display: 'flex', alignItems: 'center' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span> &nbsp;Ekspor Excel
                 </button>
               </div>
               {renderSearchBar()}
@@ -727,8 +784,11 @@ export default function App() {
                   {filteredProposals.map(p => (
                     <tr key={p.id}>
                       <td className="cid">{p.kode_tiket}</td>
-                      <td><div style={{ fontWeight: 500 }}>{p.user?.name || 'N/A'}</div><div style={{ fontSize: '11.5px', color: 'var(--t3)', marginTop: '2px' }}>{p.instansi || p.user?.instansi || '-'}</div></td>
-                      <td>{p.kegiatan}</td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '13.5px' }}>{p.user?.name || 'N/A'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--t3)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{p.instansi || p.user?.instansi || '-'}</div>
+                      </td>
+                      <td style={{ fontWeight: 500 }}>{p.kegiatan}</td>
                       <td style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)' }}>Rp {formatRupiah(p.dana_diajukan)}</td>
                       <td><span className={`status ${getStatusClass(p.status)}`}>{p.status}</span></td>
                       <td className="ract">
@@ -778,6 +838,31 @@ export default function App() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f0f9ff', borderRadius: '8px', padding: '12px 16px', border: '1px solid #e0f2fe' }}>
                         <div style={{ fontWeight: 700, color: '#075985', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>BUKTI PEMBAYARAN</div>
                         <a href={`/storage/${selectedProposal.bukti_transfer}`} target="_blank" rel="noopener noreferrer" style={{ color: '#0ea5e9', fontWeight: 500, fontSize: '13px', textDecoration: 'none' }}>Lihat File &rarr;</a>
+                      </div>
+                    )}
+                    {(activeRole === 'master' || activeRole === 'reviewer') && (
+                      <div style={{ marginTop: '8px', padding: '16px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '8px' }}>
+                          Input Rekapan Bukti Transfer (Data Master)
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input type="file" id={`master-upload-${selectedProposal.id}`} className="inp" accept="application/pdf" style={{ flex: 1, padding: '6px', fontSize: '12.5px' }} />
+                          <button className="btn btn-p btn-sm" onClick={() => {
+                            const fileInput = document.getElementById(`master-upload-${selectedProposal.id}`);
+                            if (fileInput && fileInput.files.length > 0) {
+                              const formData = new FormData();
+                              formData.append('bukti_transfer', fileInput.files[0]);
+                              axios.post(`/api/proposals/${selectedProposal.id}/upload-bukti`, formData).then(() => {
+                                showToast('Bukti transfer master berhasil diupload!');
+                                fetchProposals();
+                                setActiveModal(null);
+                              }).catch(() => showToast('Gagal upload bukti (Pastikan PDF Max 5MB)'));
+                            } else {
+                              showToast('Pilih file terlebih dahulu');
+                            }
+                          }}>Upload</button>
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--t3)', marginTop: '6px' }}>* Format PDF Max 5MB. Melengkapi rekapan meskipun status sebelum/sesudah pencairan dana.</div>
                       </div>
                     )}
                   </div>
